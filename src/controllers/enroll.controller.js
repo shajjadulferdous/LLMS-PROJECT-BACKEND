@@ -19,6 +19,9 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
     });
 
     if (existingEnrollment) {
+        if (existingEnrollment.paymentStatus === 'pending') {
+            throw new ApiError(400, "Your enrollment is pending instructor validation");
+        }
         throw new ApiError(400, "You are already enrolled in this course");
     }
 
@@ -27,20 +30,36 @@ export const enrollInCourse = asyncHandler(async (req, res) => {
     const ok = await bank.isPasswordCorrect(bankPassword || "");
     if (!ok) throw new ApiError(401, "Bank password incorrect");
     if (bank.balance < course.price) throw new ApiError(400, "Insufficient funds to enroll");
+
+    // Deduct from student's account
     bank.balance -= course.price;
-    bank.history.push(`PURCHASE:${course._id}:${course.price}`);
+    bank.history.push(`PENDING_ENROLLMENT:${course._id}:${course.price}:${new Date().toISOString()}`);
     await bank.save();
 
+    // Create pending enrollment (waiting for instructor validation)
+    const enroll = await Enroll.create({
+        course: course._id,
+        instructor: course.instructor,
+        student: req.user._id,
+        transactionAmount: course.price,
+        paymentStatus: 'pending'
+    });
 
-    const enroll = await Enroll.create({ course: course._id, instructor: course.instructor, student: req.user._id });
-    await Payment.create({ user: req.user._id, course: course._id, amount: course.price, method: "bank", status: "success", note: "Course enrollment" });
-    await User.findByIdAndUpdate(req.user._id, { $addToSet: { enrollCourse: course._id } });
+    await Payment.create({
+        user: req.user._id,
+        course: course._id,
+        amount: course.price,
+        method: "bank",
+        status: "success",
+        note: "Course enrollment - pending instructor validation"
+    });
 
     return res.status(201).json(new ApiResponse(201, {
         enroll,
-        isEnrolled: true,
-        message: "Enrolled successfully! You now have access to all course materials."
-    }, "Enrolled successfully"));
+        isEnrolled: false,
+        paymentStatus: 'pending',
+        message: "Payment successful! Waiting for instructor to validate your enrollment."
+    }, "Enrollment request submitted"));
 });
 
 export const myEnrollments = asyncHandler(async (req, res) => {
@@ -84,8 +103,10 @@ export const checkEnrollment = asyncHandler(async (req, res) => {
     });
 
     return res.status(200).json(new ApiResponse(200, {
-        isEnrolled: !!enrollment,
-        enrollmentId: enrollment?._id || null
+        isEnrolled: enrollment && enrollment.paymentStatus === 'validated',
+        enrollmentId: enrollment?._id || null,
+        paymentStatus: enrollment?.paymentStatus || null,
+        isPending: enrollment?.paymentStatus === 'pending'
     }));
 });
 
@@ -140,4 +161,110 @@ export const completeCourse = asyncHandler(async (req, res) => {
     await enrollment.save();
 
     return res.status(200).json(new ApiResponse(200, enrollment, "Course completed successfully! Congratulations!"));
+});
+
+// Get pending enrollments for instructor
+export const getPendingEnrollments = asyncHandler(async (req, res) => {
+    // Get courses where the current user is an instructor
+    const courses = await Course.find({ instructor: req.user._id });
+    const courseIds = courses.map(c => c._id);
+
+    // Find pending enrollments for these courses
+    const pendingEnrollments = await Enroll.find({
+        course: { $in: courseIds },
+        paymentStatus: 'pending'
+    })
+        .populate('course', 'title price')
+        .populate('student', 'username fullName email profilePicture')
+        .sort({ createdAt: -1 });
+
+    // Get bank account information for each student
+    const enrollmentsWithBankInfo = await Promise.all(
+        pendingEnrollments.map(async (enrollment) => {
+            const bank = await Bank.findOne({ user: enrollment.student._id });
+            return {
+                ...enrollment.toObject(),
+                studentBankAccount: bank?.accountNo || 'N/A'
+            };
+        })
+    );
+
+    return res.status(200).json(new ApiResponse(200, enrollmentsWithBankInfo, "Pending enrollments retrieved"));
+});
+
+// Validate enrollment (instructor only)
+export const validateEnrollment = asyncHandler(async (req, res) => {
+    const { enrollmentId } = req.params;
+    const { action } = req.body; // 'approve' or 'reject'
+
+    const enrollment = await Enroll.findById(enrollmentId).populate('course').populate('student');
+    if (!enrollment) throw new ApiError(404, "Enrollment not found");
+
+    // Verify instructor owns this course
+    const isInstructor = enrollment.instructor.some(
+        instId => instId.toString() === req.user._id.toString()
+    );
+    if (!isInstructor) {
+        throw new ApiError(403, "Only course instructors can validate enrollments");
+    }
+
+    if (enrollment.paymentStatus !== 'pending') {
+        throw new ApiError(400, `Enrollment is already ${enrollment.paymentStatus}`);
+    }
+
+    if (action === 'approve') {
+        // Transfer money to instructor's bank account
+        const instructorBank = await Bank.findOne({ user: req.user._id });
+        if (!instructorBank) throw new ApiError(400, "Instructor bank account not found");
+
+        instructorBank.balance += enrollment.transactionAmount;
+        instructorBank.history.push(
+            `ENROLLMENT_VALIDATED:${enrollment.course._id}:${enrollment.transactionAmount}:${enrollment.student._id}:${new Date().toISOString()}`
+        );
+        await instructorBank.save();
+
+        // Update enrollment status
+        enrollment.paymentStatus = 'validated';
+        enrollment.validatedBy = req.user._id;
+        enrollment.validatedAt = new Date();
+        await enrollment.save();
+
+        // Add course to student's enrollCourse array
+        await User.findByIdAndUpdate(enrollment.student._id, {
+            $addToSet: { enrollCourse: enrollment.course._id }
+        });
+
+        // Update student's bank history
+        const studentBank = await Bank.findOne({ user: enrollment.student._id });
+        if (studentBank) {
+            studentBank.history.push(
+                `ENROLLMENT_APPROVED:${enrollment.course._id}:${enrollment.transactionAmount}:${new Date().toISOString()}`
+            );
+            await studentBank.save();
+        }
+
+        return res.status(200).json(new ApiResponse(200, enrollment, "Enrollment validated successfully. Student now has access to the course."));
+    }
+    else if (action === 'reject') {
+        // Refund money to student
+        const studentBank = await Bank.findOne({ user: enrollment.student._id });
+        if (!studentBank) throw new ApiError(400, "Student bank account not found");
+
+        studentBank.balance += enrollment.transactionAmount;
+        studentBank.history.push(
+            `REFUND:${enrollment.course._id}:${enrollment.transactionAmount}:${new Date().toISOString()}`
+        );
+        await studentBank.save();
+
+        // Update enrollment status
+        enrollment.paymentStatus = 'rejected';
+        enrollment.validatedBy = req.user._id;
+        enrollment.validatedAt = new Date();
+        await enrollment.save();
+
+        return res.status(200).json(new ApiResponse(200, enrollment, "Enrollment rejected. Amount refunded to student."));
+    }
+    else {
+        throw new ApiError(400, "Invalid action. Use 'approve' or 'reject'");
+    }
 });

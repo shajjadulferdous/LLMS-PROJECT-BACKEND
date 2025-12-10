@@ -14,6 +14,22 @@ const enrollSchema = new mongoose.Schema(
             },
         ],
         student: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        paymentStatus: {
+            type: String,
+            enum: ['pending', 'validated', 'rejected'],
+            default: 'pending'
+        },
+        transactionAmount: {
+            type: Number,
+            required: true
+        },
+        validatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User"
+        },
+        validatedAt: {
+            type: Date
+        },
         completedMaterials: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "Course.materials"

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { courseService } from '../../services/courseService';
+import { enrollService } from '../../services/enrollService';
 import Navbar from '../../components/shared/Navbar';
 import Footer from '../../components/shared/Footer';
 import toast from 'react-hot-toast';
@@ -14,9 +15,12 @@ const CourseView = () => {
     const [quizResults, setQuizResults] = useState({});
     const [submittingQuiz, setSubmittingQuiz] = useState({});
     const [enrollmentRequired, setEnrollmentRequired] = useState(false);
+    const [enrollment, setEnrollment] = useState(null);
+    const [pastQuizzes, setPastQuizzes] = useState([]);
 
     useEffect(() => {
         fetchCourse();
+        fetchEnrollmentData();
     }, [id]);
 
     const fetchCourse = async () => {
@@ -39,6 +43,36 @@ const CourseView = () => {
         }
     };
 
+    const fetchEnrollmentData = async () => {
+        try {
+            const enrollmentsResponse = await enrollService.getMyEnrollments();
+            const enrollmentsData = enrollmentsResponse.data || [];
+            const currentEnrollment = enrollmentsData.find(
+                e => e.course?._id === id || e.course === id
+            );
+
+            if (currentEnrollment) {
+                setEnrollment(currentEnrollment);
+                // Load past quiz scores
+                if (currentEnrollment.quizScores && currentEnrollment.quizScores.length > 0) {
+                    setPastQuizzes(currentEnrollment.quizScores);
+                    // Pre-populate quiz results for already answered quizzes
+                    const results = {};
+                    currentEnrollment.quizScores.forEach(qs => {
+                        results[qs.materialId] = {
+                            alreadyAnswered: true,
+                            score: qs.score,
+                            answeredAt: qs.answeredAt
+                        };
+                    });
+                    setQuizResults(results);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching enrollment:', error);
+        }
+    };
+
     const handleQuizSubmit = async (materialId) => {
         const selectedAnswer = quizAnswers[materialId];
 
@@ -55,17 +89,50 @@ const CourseView = () => {
 
             setQuizResults(prev => ({ ...prev, [materialId]: result }));
 
-            if (result.isCorrect) {
-                toast.success('Correct! +1 point 🎉');
+            if (result.isRetake) {
+                if (result.isCorrect) {
+                    toast.success('Correct! (No points for retakes)');
+                } else {
+                    toast.error('Incorrect answer (No points for retakes)');
+                }
             } else {
-                toast.error('Incorrect answer');
+                if (result.isCorrect) {
+                    toast.success('Correct! +1 point 🎉');
+                } else {
+                    toast.error('Incorrect answer');
+                }
             }
+
+            // Refresh enrollment data to update past quizzes
+            await fetchEnrollmentData();
         } catch (error) {
             console.error('Error submitting quiz:', error);
-            toast.error(error.response?.data?.message || 'Failed to submit quiz');
+            const errorMsg = error.response?.data?.message || 'Failed to submit quiz';
+
+            // If already answered, just show the message without error styling
+            if (errorMsg.includes('already answered')) {
+                toast.info(errorMsg);
+            } else {
+                toast.error(errorMsg);
+            }
         } finally {
             setSubmittingQuiz(prev => ({ ...prev, [materialId]: false }));
         }
+    };
+
+    const handleRetakeQuiz = (materialId) => {
+        // Clear previous answer and result to allow retaking
+        setQuizAnswers(prev => {
+            const updated = { ...prev };
+            delete updated[materialId];
+            return updated;
+        });
+        setQuizResults(prev => {
+            const updated = { ...prev };
+            delete updated[materialId];
+            return updated;
+        });
+        toast.info('You can now retake this quiz');
     };
 
     if (loading) {
@@ -97,7 +164,6 @@ const CourseView = () => {
 
     // Separate materials by type
     const videos = course.materials?.filter(m => m.type === 'video') || [];
-    const documents = course.materials?.filter(m => m.type === 'Document') || [];
     const links = course.materials?.filter(m => m.type === 'link') || [];
     const quizzes = course.materials?.filter(m => m.type === 'quiz') || [];
 
@@ -129,7 +195,7 @@ const CourseView = () => {
                                         Enrollment Required
                                     </h3>
                                     <div className="mt-2 text-sm text-yellow-700">
-                                        <p>You must enroll in this course to access all videos, documents, links, and quizzes.</p>
+                                        <p>You must enroll in this course to access all videos, links, and quizzes.</p>
                                     </div>
                                     <div className="mt-4">
                                         <button
@@ -271,64 +337,6 @@ const CourseView = () => {
                             </div>
                         )}
 
-                        {/* Documents/PDFs Section */}
-                        {documents.length > 0 && (
-                            <div className="card mb-6">
-                                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                                    📄 PDFs & Documents
-                                    <span className="text-sm font-normal text-gray-600">({documents.length})</span>
-                                </h2>
-                                <div className="space-y-4">
-                                    {documents.map((doc, index) => {
-                                        let docUrl = doc.url || doc.documentFile;
-
-                                        const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-                                        // Handle different URL formats (for backward compatibility)
-                                        if (docUrl && !docUrl.startsWith('http://') && !docUrl.startsWith('https://')) {
-                                            // Not an absolute URL - handle relative paths
-                                            if (docUrl.startsWith('/')) {
-                                                docUrl = `${backendUrl}${docUrl}`;
-                                            } else if (docUrl.startsWith('uploaded/')) {
-                                                const filename = docUrl.replace('uploaded/', '');
-                                                docUrl = `${backendUrl}/temp/${filename}`;
-                                            } else {
-                                                docUrl = `${backendUrl}/temp/${docUrl}`;
-                                            }
-                                        }
-                                        // Cloudinary URLs and other absolute URLs are used as-is
-
-                                        return (
-                                            <div key={doc._id} className="p-4 bg-gray-50 rounded-lg border">
-                                                <div className="flex gap-4">
-                                                    <img
-                                                        src={doc.CoursePicture}
-                                                        alt={doc.title}
-                                                        className="w-24 h-24 object-cover rounded"
-                                                        onError={(e) => { e.target.src = 'https://via.placeholder.com/96?text=PDF'; }}
-                                                    />
-                                                    <div className="flex-1">
-                                                        <h3 className="font-bold text-lg mb-1">{index + 1}. {doc.title}</h3>
-                                                        <p className="text-sm text-gray-600 mb-2">📋 PDF Document</p>
-                                                        {docUrl && (
-                                                            <a
-                                                                href={docUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="btn bg-red-600 hover:bg-red-700 text-white btn-sm"
-                                                            >
-                                                                📥 View PDF
-                                                            </a>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
                         {/* Links Section */}
                         {links.length > 0 && (
                             <div className="card mb-6">
@@ -365,11 +373,53 @@ const CourseView = () => {
                             </div>
                         )}
 
+                        {/* Past Quizzes Section */}
+                        {pastQuizzes.length > 0 && (
+                            <div className="card mb-6">
+                                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                    📚 Past Quiz Submissions
+                                    <span className="text-sm font-normal text-gray-600">({pastQuizzes.length})</span>
+                                </h2>
+                                <div className="space-y-4">
+                                    {pastQuizzes.map((pastQuiz) => {
+                                        const quizMaterial = course.materials?.find(m => m._id === pastQuiz.materialId);
+                                        if (!quizMaterial) return null;
+
+                                        const question = quizMaterial.quizQuestions?.[0];
+                                        if (!question) return null;
+
+                                        return (
+                                            <div key={pastQuiz.materialId} className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div>
+                                                        <h3 className="font-bold text-lg">{quizMaterial.title}</h3>
+                                                        <p className="text-sm text-gray-600">
+                                                            Answered: {new Date(pastQuiz.answeredAt).toLocaleString()}
+                                                        </p>
+                                                    </div>
+                                                    <div className={`px-4 py-2 rounded-full font-bold ${pastQuiz.score > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                        {pastQuiz.score > 0 ? '✓ Correct' : '✗ Wrong'}
+                                                    </div>
+                                                </div>
+                                                <p className="text-gray-700 mb-2"><strong>Question:</strong> {question.question}</p>
+                                                <button
+                                                    onClick={() => handleRetakeQuiz(pastQuiz.materialId)}
+                                                    className="btn btn-sm bg-blue-600 hover:bg-blue-700 text-white"
+                                                >
+                                                    🔄 Retake Quiz
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Quizzes Section */}
                         {quizzes.length > 0 && (
                             <div className="card mb-6">
                                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                                    📝 Quizzes
+                                    📝 Available Quizzes
                                     <span className="text-sm font-normal text-gray-600">({quizzes.length})</span>
                                 </h2>
                                 <div className="space-y-6">
@@ -377,11 +427,17 @@ const CourseView = () => {
                                         const question = quiz.quizQuestions?.[0];
                                         const result = quizResults[quiz._id];
                                         const isSubmitting = submittingQuiz[quiz._id];
+                                        const alreadyAnswered = pastQuizzes.some(pq => pq.materialId === quiz._id);
 
                                         if (!question) return null;
 
                                         return (
                                             <div key={quiz._id} className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border-2 border-blue-200">
+                                                {alreadyAnswered && (
+                                                    <div className="mb-3 p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 text-sm rounded">
+                                                        ℹ️ You have already submitted an answer for this quiz. You can retake it anytime!
+                                                    </div>
+                                                )}
                                                 <div className="flex gap-4 mb-4">
                                                     <img
                                                         src={quiz.CoursePicture}

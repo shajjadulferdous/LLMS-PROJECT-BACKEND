@@ -41,7 +41,7 @@ const materialSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ["video", "Document", "link", "quiz"],
+            enum: ["video", "link", "quiz"],
             required: true
         },
         CoursePicture: {
@@ -54,10 +54,6 @@ const materialSchema = new mongoose.Schema(
         },
         videoFile: {
             type: String, // Cloudinary URL for uploaded videos
-            trim: true
-        },
-        documentFile: {
-            type: String, // Cloudinary URL for uploaded documents
             trim: true
         },
         duration: {

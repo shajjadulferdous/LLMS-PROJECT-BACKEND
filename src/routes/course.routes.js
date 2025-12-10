@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { jwtverifyJWT } from "../middlewares/auth.middlewares.js";
+import { jwtverifyJWT, optionalJWT } from "../middlewares/auth.middlewares.js";
 import { requireAdmin } from "../middlewares/admin.middlewares.js";
 import { upload } from "../middlewares/multer.middlewares.js";
 import { createCourse, listCourses, getCourse, updateCourse, deleteCourse, addMaterial, deleteMaterial, searchInstructors, submitQuizAnswer, uploadFile } from "../controllers/course.controller.js";
@@ -7,9 +7,9 @@ import { approveCourse, denyCourse, deleteAnyCourse, listPendingCourses } from "
 
 const router = Router();
 
-// public
-router.get("/", listCourses);
-router.get("/:id", getCourse);
+// public (with optional auth)
+router.get("/", optionalJWT, listCourses);
+router.get("/:id", optionalJWT, getCourse);
 
 // instructor
 router.post("/", jwtverifyJWT, createCourse);

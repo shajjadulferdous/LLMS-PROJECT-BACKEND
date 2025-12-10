@@ -174,6 +174,48 @@ const InstructorDashboard = () => {
                     </div>
                 )}
 
+                {/* Quick Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <Link
+                        to="/instructor/create-course"
+                        className="card hover:shadow-lg transition-shadow cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Plus className="h-8 w-8 text-blue-600" />
+                            <div>
+                                <p className="font-semibold text-gray-900">Create Course</p>
+                                <p className="text-sm text-gray-600">Add new course</p>
+                            </div>
+                        </div>
+                    </Link>
+
+                    <Link
+                        to="/instructor/validate-enrollments"
+                        className="card hover:shadow-lg transition-shadow cursor-pointer bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Users className="h-8 w-8 text-green-600" />
+                            <div>
+                                <p className="font-semibold text-gray-900">Validate Enrollments</p>
+                                <p className="text-sm text-gray-600">Approve student payments</p>
+                            </div>
+                        </div>
+                    </Link>
+
+                    <Link
+                        to="/instructor/my-courses"
+                        className="card hover:shadow-lg transition-shadow cursor-pointer bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200"
+                    >
+                        <div className="flex items-center gap-3">
+                            <BookOpen className="h-8 w-8 text-purple-600" />
+                            <div>
+                                <p className="font-semibold text-gray-900">Manage Courses</p>
+                                <p className="text-sm text-gray-600">Edit your courses</p>
+                            </div>
+                        </div>
+                    </Link>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Recent Courses */}
                     <div className="lg:col-span-2">

@@ -20,11 +20,22 @@ const CourseDetails = () => {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [enrollmentStatus, setEnrollmentStatus] = useState(null);
 
     useEffect(() => {
         fetchCourseDetails();
         fetchBankAccount();
+        checkEnrollmentStatus();
     }, [id]);
+
+    const checkEnrollmentStatus = async () => {
+        try {
+            const response = await enrollService.checkEnrollment(id);
+            setEnrollmentStatus(response.data);
+        } catch (error) {
+            console.error('Error checking enrollment:', error);
+        }
+    };
 
     const fetchCourseDetails = async () => {
         try {
@@ -73,16 +84,23 @@ const CourseDetails = () => {
             };
 
             const response = await enrollService.enrollCourse(course._id, enrollmentData);
-            toast.success('Successfully enrolled! You now have access to all course materials.');
-            setShowPaymentModal(false);
 
-            // Refresh the course data to show enrolled status
-            await fetchCourseDetails();
+            const responseData = response.data || response;
+            const paymentStatus = responseData.paymentStatus;
 
-            // Navigate to course view so student can access materials immediately
-            setTimeout(() => {
-                navigate(`/course/${course._id}`);
-            }, 1000);
+            if (paymentStatus === 'pending') {
+                toast.success('Payment successful! Waiting for instructor validation.');
+                setShowPaymentModal(false);
+                await checkEnrollmentStatus();
+            } else {
+                toast.success('Successfully enrolled! You now have access to all course materials.');
+                setShowPaymentModal(false);
+                await fetchCourseDetails();
+
+                setTimeout(() => {
+                    navigate(`/course/${course._id}`);
+                }, 1000);
+            }
         } catch (error) {
             toast.error(error.response?.data?.message || 'Enrollment failed');
         } finally {
@@ -144,12 +162,26 @@ const CourseDetails = () => {
                                     alt={course.title}
                                     className="w-full h-64 object-cover rounded-lg mb-4"
                                 />
-                                <button
-                                    onClick={handleEnroll}
-                                    className="w-full btn-primary text-lg py-3"
-                                >
-                                    Enroll Now
-                                </button>
+                                {enrollmentStatus?.isPending ? (
+                                    <div className="w-full bg-yellow-100 border-2 border-yellow-500 text-yellow-800 text-center py-3 rounded-lg">
+                                        <p className="font-bold">⏳ Enrollment Pending</p>
+                                        <p className="text-sm mt-1">Waiting for instructor validation</p>
+                                    </div>
+                                ) : enrollmentStatus?.isEnrolled ? (
+                                    <button
+                                        onClick={() => navigate(`/course/${course._id}`)}
+                                        className="w-full btn-success text-lg py-3"
+                                    >
+                                        ✓ Enrolled - Go to Course
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={handleEnroll}
+                                        className="w-full btn-primary text-lg py-3"
+                                    >
+                                        Enroll Now
+                                    </button>
+                                )}
                                 <p className="text-sm text-gray-600 text-center mt-4">
                                     30-day money-back guarantee
                                 </p>

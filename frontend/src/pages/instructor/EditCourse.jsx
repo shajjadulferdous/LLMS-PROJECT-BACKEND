@@ -32,7 +32,6 @@ const EditCourse = () => {
         type: 'video',
         url: '',
         videoFile: '',
-        documentFile: '',
         duration: '',
         CoursePicture: '',
         quizQuestions: [{
@@ -156,13 +155,6 @@ const EditCourse = () => {
             const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
             if (!validVideoTypes.includes(file.type) && !file.name.match(/\.(mp4|webm|ogg|mov|avi|mkv)$/i)) {
                 toast.error('Please select a valid video file (MP4, WebM, OGG, MOV, AVI, MKV)');
-                return;
-            }
-        }
-
-        if (fieldName === 'documentFile') {
-            if (file.type !== 'application/pdf' && !file.name.match(/\.pdf$/i)) {
-                toast.error('Please select a PDF file');
                 return;
             }
         }
@@ -309,29 +301,6 @@ const EditCourse = () => {
             }
         }
 
-        if (materialForm.type === 'Document') {
-            if (!materialForm.url && !materialForm.documentFile) {
-                toast.error('Please provide either a PDF URL or upload a PDF file');
-                return;
-            }
-            // Skip validation for Cloudinary URLs and uploaded files
-            if (materialForm.documentFile) {
-                const isCloudinary = materialForm.documentFile.includes('cloudinary.com');
-                const isUploadedFile = materialForm.documentFile.includes('/temp/');
-                if (!isCloudinary && !isUploadedFile && !materialForm.documentFile.match(/\.pdf($|\?)/i)) {
-                    toast.error('Only PDF files are allowed');
-                    return;
-                }
-            }
-            if (materialForm.url) {
-                const isCloudinary = materialForm.url.includes('cloudinary.com');
-                if (!isCloudinary && !materialForm.url.match(/\.pdf($|\?)/i)) {
-                    toast.error('Document URL must be a PDF file');
-                    return;
-                }
-            }
-        }
-
         if (materialForm.type === 'link') {
             if (!materialForm.url) {
                 toast.error('Please provide a URL for the link');
@@ -378,9 +347,6 @@ const EditCourse = () => {
             if (materialForm.type === 'video') {
                 if (materialForm.videoFile) payload.videoFile = materialForm.videoFile;
                 if (materialForm.url) payload.url = materialForm.url;
-            } else if (materialForm.type === 'Document') {
-                if (materialForm.documentFile) payload.documentFile = materialForm.documentFile;
-                if (materialForm.url) payload.url = materialForm.url;
             } else if (materialForm.type === 'link') {
                 payload.url = materialForm.url;
             } else if (materialForm.type === 'quiz') {
@@ -395,7 +361,6 @@ const EditCourse = () => {
                 type: 'video',
                 url: '',
                 videoFile: '',
-                documentFile: '',
                 duration: '',
                 CoursePicture: '',
                 quizQuestions: [{
@@ -713,7 +678,6 @@ const EditCourse = () => {
                                                 required
                                             >
                                                 <option value="video">Video</option>
-                                                <option value="Document">Document (PDF)</option>
                                                 <option value="link">Link</option>
                                                 <option value="quiz">Quiz</option>
                                             </select>
@@ -747,37 +711,6 @@ const EditCourse = () => {
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-gray-500 mt-1">Upload a video file OR paste a video URL</p>
-                                            </div>
-                                        )}
-
-                                        {/* DOCUMENT: Only title + PDF file/URL */}
-                                        {materialForm.type === 'Document' && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                    Upload PDF File or Enter PDF URL *
-                                                </label>
-                                                <input
-                                                    key={fileInputKey}
-                                                    type="file"
-                                                    accept="application/pdf,.pdf"
-                                                    onChange={(e) => handleFileUpload(e, 'documentFile')}
-                                                    className="input w-full mb-2"
-                                                />
-                                                <input
-                                                    type="url"
-                                                    name="url"
-                                                    value={materialForm.url}
-                                                    onChange={handleMaterialFormChange}
-                                                    className="input w-full"
-                                                    placeholder="Or paste PDF URL (must end with .pdf)"
-                                                />
-                                                {materialForm.documentFile && (
-                                                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                                                        <p className="text-xs text-green-700 font-semibold">✓ PDF file uploaded</p>
-                                                        <p className="text-xs text-gray-600 mt-1 break-all">{materialForm.documentFile}</p>
-                                                    </div>
-                                                )}
-                                                <p className="text-xs text-gray-500 mt-1">Upload a PDF file OR paste a PDF URL</p>
                                             </div>
                                         )}
 
@@ -932,14 +865,16 @@ const EditCourse = () => {
 
                                                     {/* Display video/document/link */}
                                                     {(() => {
-                                                        let fileUrl = material.url || material.videoFile || material.documentFile;
+                                                        let fileUrl = material.url || material.videoFile;
 
                                                         // If no URL, show message
                                                         if (!fileUrl) {
                                                             return <p className="text-sm text-gray-500">No file/URL provided</p>;
                                                         }
 
-                                                        const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                                                        // Get base backend URL without /api/v1
+                                                        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+                                                        const backendUrl = apiUrl.replace('/api/v1', '');
 
                                                         // Handle different URL formats (for backward compatibility with old uploads)
                                                         if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
@@ -1008,20 +943,6 @@ const EditCourse = () => {
                                                             );
                                                         }
 
-                                                        // For documents/PDFs
-                                                        if (material.type === 'Document') {
-                                                            return (
-                                                                <a
-                                                                    href={fileUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm mt-2"
-                                                                >
-                                                                    📄 View PDF
-                                                                </a>
-                                                            );
-                                                        }
-
                                                         // For links and other types
                                                         return (
                                                             <a
@@ -1032,14 +953,14 @@ const EditCourse = () => {
                                                             >
                                                                 {material.type === 'link' && '🔗 Open Link'}
                                                                 {material.type === 'quiz' && '📝 View Quiz'}
-                                                                {!['link', 'quiz', 'video', 'Document'].includes(material.type) && '📂 Open'}
+                                                                {!['link', 'quiz', 'video'].includes(material.type) && '📂 Open'}
                                                             </a>
                                                         );
                                                     })()}
 
-                                                    {(material.url || material.videoFile || material.documentFile) && (
+                                                    {(material.url || material.videoFile) && (
                                                         <p className="text-xs text-gray-500 mt-2 truncate max-w-md">
-                                                            URL: {material.url || material.videoFile || material.documentFile}
+                                                            URL: {material.url || material.videoFile}
                                                         </p>
                                                     )}
                                                 </div>

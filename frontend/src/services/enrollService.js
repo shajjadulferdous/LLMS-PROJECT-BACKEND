@@ -40,4 +40,14 @@ export const enrollService = {
         });
         return response.data;
     },
+
+    getPendingEnrollments: async () => {
+        const response = await api.get('/enroll/pending');
+        return response.data;
+    },
+
+    validateEnrollment: async (enrollmentId, action) => {
+        const response = await api.post(`/enroll/${enrollmentId}/validate`, { action });
+        return response.data;
+    },
 };

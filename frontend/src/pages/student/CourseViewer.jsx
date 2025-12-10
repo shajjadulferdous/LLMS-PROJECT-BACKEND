@@ -15,6 +15,7 @@ const CourseViewer = () => {
     const [enrollment, setEnrollment] = useState(null);
     const [currentMaterialIndex, setCurrentMaterialIndex] = useState(0);
     const [completedMaterials, setCompletedMaterials] = useState([]);
+    const [quizAttempts, setQuizAttempts] = useState({});
 
     useEffect(() => {
         fetchCourseData();
@@ -37,6 +38,18 @@ const CourseViewer = () => {
                 if (currentEnrollment) {
                     setEnrollment(currentEnrollment);
                     setCompletedMaterials(currentEnrollment.completedMaterials || []);
+
+                    // Load past quiz attempts
+                    if (currentEnrollment.quizScores && currentEnrollment.quizScores.length > 0) {
+                        const attempts = {};
+                        currentEnrollment.quizScores.forEach(qs => {
+                            attempts[qs.materialId] = {
+                                score: qs.score,
+                                answeredAt: qs.answeredAt
+                            };
+                        });
+                        setQuizAttempts(attempts);
+                    }
                 } else {
                     toast.error('You are not enrolled in this course');
                     navigate('/student/courses/' + id);
@@ -87,6 +100,42 @@ const CourseViewer = () => {
         } catch (error) {
             console.error('Progress update error:', error);
             toast.error(error.response?.data?.message || 'Failed to update progress');
+        }
+    };
+
+    const handleQuizSubmit = async (materialId, selectedAnswer) => {
+        if (selectedAnswer == null) {
+            toast.error('Please select an answer');
+            return;
+        }
+
+        try {
+            const response = await courseService.submitQuizAnswer(id, materialId, selectedAnswer);
+            const result = response.data;
+
+            if (result.isRetake) {
+                if (result.isCorrect) {
+                    toast.success('Correct! (No points for retakes)');
+                } else {
+                    toast.error(`Incorrect! The correct answer was: Option ${String.fromCharCode(65 + result.correctAnswer)} (No points for retakes)`);
+                }
+            } else {
+                if (result.isCorrect) {
+                    toast.success('Correct! +1 point 🎉');
+                    // Auto-mark as complete if correct on first attempt
+                    if (!completedMaterials.includes(materialId)) {
+                        await markMaterialComplete(materialId);
+                    }
+                } else {
+                    toast.error(`Incorrect! The correct answer was: Option ${String.fromCharCode(65 + result.correctAnswer)}`);
+                }
+            }
+
+            // Refresh enrollment data to update quiz attempts
+            await fetchCourseData();
+        } catch (error) {
+            console.error('Error submitting quiz:', error);
+            toast.error(error.response?.data?.message || 'Failed to submit quiz');
         }
     };
 
@@ -247,20 +296,6 @@ const CourseViewer = () => {
                                         );
                                     })()}
                                 </div>
-                            ) : currentMaterial.type === 'Document' ? (
-                                <div className="bg-white rounded-lg p-8 max-h-[70vh] overflow-y-auto">
-                                    <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                                        {currentMaterial.title}
-                                    </h2>
-                                    <div className="prose max-w-none">
-                                        <p className="text-gray-700">
-                                            Document content will be displayed here or can be downloaded from:{' '}
-                                            <a href={currentMaterial.url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">
-                                                View Document
-                                            </a>
-                                        </p>
-                                    </div>
-                                </div>
                             ) : currentMaterial.type === 'link' ? (
                                 <div className="bg-white rounded-lg p-8">
                                     <h2 className="text-2xl font-bold text-gray-900 mb-4">
@@ -275,6 +310,83 @@ const CourseViewer = () => {
                                         Open Resource
                                     </a>
                                 </div>
+                            ) : currentMaterial.type === 'quiz' ? (
+                                (() => {
+                                    const question = currentMaterial.quizQuestions?.[0];
+                                    const pastAttempt = quizAttempts[currentMaterial._id];
+
+                                    if (!question) {
+                                        return (
+                                            <div className="bg-white rounded-lg p-8">
+                                                <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                                                    {currentMaterial.title}
+                                                </h2>
+                                                <p className="text-red-600">Quiz question not found</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="bg-white rounded-lg p-8">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                                                    {currentMaterial.title}
+                                                </h2>
+                                                <p className="text-sm text-gray-600">
+                                                    ⏱️ Time Limit: {question.timeLimit} seconds
+                                                </p>
+                                                {pastAttempt && (
+                                                    <div className={`mt-3 p-3 rounded-lg ${pastAttempt.score > 0 ? 'bg-green-100 border-l-4 border-green-500' : 'bg-yellow-100 border-l-4 border-yellow-500'}`}>
+                                                        <p className="text-sm font-semibold">
+                                                            {pastAttempt.score > 0 ? '✓ Previously answered correctly' : '⚠️ Previously answered incorrectly'}
+                                                        </p>
+                                                        <p className="text-xs text-gray-700 mt-1">
+                                                            Last attempt: {new Date(pastAttempt.answeredAt).toLocaleString()}
+                                                        </p>
+                                                        <p className="text-xs text-blue-700 mt-1">You can retake this quiz anytime!</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-gradient-to-br from-blue-50 to-purple-50 p-6 rounded-lg border-2 border-blue-200 mb-6">
+                                                <p className="font-semibold text-lg mb-6">{question.question}</p>
+
+                                                <div className="space-y-3">
+                                                    {question.options.map((option, optIndex) => (
+                                                        <label
+                                                            key={optIndex}
+                                                            className="flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all bg-white border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name={`quiz-${currentMaterial._id}`}
+                                                                value={optIndex}
+                                                                className="w-5 h-5"
+                                                            />
+                                                            <span className="font-semibold text-gray-700">{String.fromCharCode(65 + optIndex)}.</span>
+                                                            <span className="flex-1 text-gray-800">{option}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() => {
+                                                    const selected = document.querySelector(`input[name="quiz-${currentMaterial._id}"]:checked`);
+                                                    if (!selected) {
+                                                        toast.error('Please select an answer');
+                                                        return;
+                                                    }
+                                                    const answer = parseInt(selected.value);
+                                                    handleQuizSubmit(currentMaterial._id, answer);
+                                                }}
+                                                className="btn-primary w-full"
+                                            >
+                                                Submit Answer
+                                            </button>
+                                        </div>
+                                    );
+                                })()
                             ) : (
                                 <div className="bg-white rounded-lg p-8">
                                     <h2 className="text-2xl font-bold text-gray-900 mb-4">

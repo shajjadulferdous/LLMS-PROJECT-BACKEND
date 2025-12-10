@@ -106,42 +106,61 @@ export const getCourse = asyncHandler(async (req, res) => {
         if (!isOwner && !isAdmin) throw new ApiError(403, "Course not approved yet");
     }
 
+    // If no user (unauthenticated), return basic course info without materials
+    if (!req.user) {
+        const courseWithoutMaterials = {
+            _id: course._id,
+            title: course.title,
+            description: course.description,
+            price: course.price,
+            instructor: course.instructor,
+            status: course.status,
+            createdAt: course.createdAt,
+            updatedAt: course.updatedAt,
+            materialsCount: course.materials?.length || 0,
+            enrollmentRequired: true,
+            isEnrolled: false,
+            paymentPending: false
+        };
+        return res.status(200).json(new ApiResponse(200, courseWithoutMaterials));
+    }
+
     // Check enrollment status for students
     let isEnrolled = false;
     let enrollmentRequired = false;
 
-    if (req.user) {
-        const isOwner = course.instructor.some((i) => (i._id ? i._id.toString() : i.toString()) === req.user._id.toString());
-        const isAdmin = req.user.role === "admin";
+    const isOwner = course.instructor.some((i) => (i._id ? i._id.toString() : i.toString()) === req.user._id.toString());
+    const isAdmin = req.user.role === "admin";
 
-        if (!isOwner && !isAdmin && req.user.role === "student") {
-            // Check if student is enrolled
-            const { Enroll } = await import("../models/enroll.model.js");
-            const enrollment = await Enroll.findOne({
-                course: course._id,
-                student: req.user._id
-            });
+    if (!isOwner && !isAdmin && req.user.role === "student") {
+        // Check if student is enrolled
+        const { Enroll } = await import("../models/enroll.model.js");
+        const enrollment = await Enroll.findOne({
+            course: course._id,
+            student: req.user._id
+        });
 
-            isEnrolled = !!enrollment;
-            enrollmentRequired = !isEnrolled;
+        // Only consider enrolled if payment is validated
+        isEnrolled = enrollment && enrollment.paymentStatus === 'validated';
+        enrollmentRequired = !isEnrolled;
 
-            // If not enrolled, return course info without materials
-            if (!isEnrolled) {
-                const courseWithoutMaterials = {
-                    _id: course._id,
-                    title: course.title,
-                    description: course.description,
-                    price: course.price,
-                    instructor: course.instructor,
-                    status: course.status,
-                    createdAt: course.createdAt,
-                    updatedAt: course.updatedAt,
-                    materialsCount: course.materials.length,
-                    enrollmentRequired: true,
-                    isEnrolled: false
-                };
-                return res.status(200).json(new ApiResponse(200, courseWithoutMaterials));
-            }
+        // If not enrolled or payment not validated, return course info without materials
+        if (!isEnrolled) {
+            const courseWithoutMaterials = {
+                _id: course._id,
+                title: course.title,
+                description: course.description,
+                price: course.price,
+                instructor: course.instructor,
+                status: course.status,
+                createdAt: course.createdAt,
+                updatedAt: course.updatedAt,
+                materialsCount: course.materials?.length || 0,
+                enrollmentRequired: true,
+                isEnrolled: false,
+                paymentPending: enrollment?.paymentStatus === 'pending'
+            };
+            return res.status(200).json(new ApiResponse(200, courseWithoutMaterials));
         }
     }
 
@@ -216,7 +235,7 @@ export const deleteCourse = asyncHandler(async (req, res) => {
 
 export const addMaterial = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, type, url, videoFile, documentFile, duration, CoursePicture, quizQuestions } = req.body;
+    const { title, type, url, videoFile, duration, CoursePicture, quizQuestions } = req.body;
 
     if (!title || !type) {
         throw new ApiError(400, "Title and type are required");
@@ -236,19 +255,6 @@ export const addMaterial = asyncHandler(async (req, res) => {
         }
         if (videoFile && !videoFile.match(/\.(mp4|webm|ogg|mov|avi|mkv)$/i)) {
             throw new ApiError(400, "Only video files are allowed for video type");
-        }
-    }
-
-    if (type === 'Document') {
-        // Document: ONLY accept PDF files
-        if (!documentFile && !url) {
-            throw new ApiError(400, "PDF file or PDF URL is required for document type");
-        }
-        if (documentFile && !documentFile.match(/\.pdf$/i)) {
-            throw new ApiError(400, "Only PDF files are allowed for document type");
-        }
-        if (url && !url.match(/\.pdf($|\?)/i)) {
-            throw new ApiError(400, "Only PDF URLs are allowed for document type");
         }
     }
 
@@ -294,7 +300,6 @@ export const addMaterial = asyncHandler(async (req, res) => {
     // Add type-specific fields
     if (url) materialData.url = url;
     if (videoFile) materialData.videoFile = videoFile;
-    if (documentFile) materialData.documentFile = documentFile;
     if (duration) materialData.duration = duration;
     if (CoursePicture) materialData.CoursePicture = CoursePicture;
     if (quizQuestions) materialData.quizQuestions = quizQuestions;
@@ -365,30 +370,43 @@ export const submitQuizAnswer = asyncHandler(async (req, res) => {
     const question = material.quizQuestions[0];
     const isCorrect = question.correctAnswer === selectedAnswer;
 
-    // Check if already answered
-    const existingScore = enrollment.quizScores.find(
+    // Check if already answered - update score but don't give points for retakes
+    const existingScoreIndex = enrollment.quizScores.findIndex(
         qs => qs.materialId.toString() === materialId
     );
 
-    if (existingScore) {
-        throw new ApiError(400, "You have already answered this quiz");
-    }
+    let isRetake = false;
+    let earnedPoints = 0;
 
-    // Add score to enrollment
-    enrollment.quizScores.push({
-        materialId: materialId,
-        score: isCorrect ? 1 : 0,
-        answeredAt: new Date()
-    });
+    if (existingScoreIndex !== -1) {
+        // This is a retake - no points awarded
+        isRetake = true;
+        enrollment.quizScores[existingScoreIndex] = {
+            materialId: materialId,
+            score: enrollment.quizScores[existingScoreIndex].score, // Keep original score
+            answeredAt: new Date()
+        };
+    } else {
+        // First attempt - award points if correct
+        earnedPoints = isCorrect ? 1 : 0;
+        enrollment.quizScores.push({
+            materialId: materialId,
+            score: earnedPoints,
+            answeredAt: new Date()
+        });
+    }
 
     await enrollment.save();
 
     return res.status(200).json(new ApiResponse(200, {
         isCorrect,
-        score: isCorrect ? 1 : 0,
+        score: earnedPoints,
+        isRetake,
         correctAnswer: question.correctAnswer,
         selectedAnswer,
-        message: isCorrect ? "Correct! +1 point" : "Incorrect answer"
+        message: isRetake
+            ? (isCorrect ? "Correct! (No points for retakes)" : "Incorrect answer (No points for retakes)")
+            : (isCorrect ? "Correct! +1 point" : "Incorrect answer")
     }, isCorrect ? "Correct answer!" : "Incorrect answer"));
 });
 
