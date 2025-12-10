@@ -27,10 +27,6 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: true,
         },
-        balance: {
-            type: Number,
-            default: 0,
-        },
         refreshToken: {
             type: String,
         },
@@ -53,6 +49,15 @@ const userSchema = new mongoose.Schema(
         ],
         profilePicture: {
             type: String,
+        },
+        role: {
+            type: String,
+            enum: ["student", "instructor", "admin"],
+            default: "student",
+        },
+        isBlocked: {
+            type: Boolean,
+            default: false,
         }
     },
     { timestamps: true }
@@ -77,8 +82,7 @@ userSchema.methods.generateAccessToken = function () {
         username: this.username,
         email: this.email,
         fullName: this.fullName,
-        balance: this.balance,
-        education: this.education
+        role: this.role
     },
         process.env.ACCESS_TOKEN_SECRET,
         {

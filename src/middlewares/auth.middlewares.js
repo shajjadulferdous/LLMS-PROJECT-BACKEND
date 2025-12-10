@@ -17,7 +17,11 @@ export const jwtverifyJWT = asyncHandler(async (req, res, next) => {
         if (!user) {
             throw new ApiError(401, 'Invalid Access TOken')
         }
+        if (user.isBlocked) {
+            throw new ApiError(403, 'User is blocked by admin')
+        }
         req.user = user;
+        console.log(req.user)
         next()
     }
     catch (error) {

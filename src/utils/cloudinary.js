@@ -27,7 +27,6 @@ const uploadOnCloudinary = async (localFilePath) => {
         try {
             fs.unlinkSync(localFilePath);
         } catch {
-            // ignore cleanup error
         }
 
         return url;
