@@ -78,7 +78,7 @@ const CourseViewer = () => {
             if (updatedCompleted.length === course.materials.length) {
                 toast.success('Congratulations! You completed the course!');
                 await enrollService.completeCourse(enrollment._id);
-                
+
                 // Refresh enrollment data
                 await fetchCourseData();
             } else {
