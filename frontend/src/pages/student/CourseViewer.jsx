@@ -26,15 +26,26 @@ const CourseViewer = () => {
             setLoading(true);
             const courseResponse = await courseService.getCourseById(id);
             const courseData = courseResponse.data?.data || courseResponse.data;
+
+            console.log('Course data received:', courseData);
+            console.log('Has materials:', courseData.materials?.length);
+            console.log('Enrollment required:', courseData.enrollmentRequired);
+            console.log('Payment pending:', courseData.paymentPending);
+
             setCourse(courseData);
 
             // Try to fetch enrollment to get progress
             try {
                 const enrollmentsResponse = await enrollService.getMyEnrollments();
                 const enrollmentsData = enrollmentsResponse.data || [];
+                console.log('All enrollments:', enrollmentsData);
+
                 const currentEnrollment = enrollmentsData.find(
                     e => e.course?._id === id
                 );
+
+                console.log('Current enrollment:', currentEnrollment);
+
                 if (currentEnrollment) {
                     setEnrollment(currentEnrollment);
                     setCompletedMaterials(currentEnrollment.completedMaterials || []);
@@ -147,9 +158,36 @@ const CourseViewer = () => {
         return (
             <div className="min-h-screen flex flex-col">
                 <Navbar />
-                <div className="flex-1 flex items-center justify-center">
-                    <div className="text-center">
-                        <p className="text-gray-600 mb-4">No course materials available</p>
+                <div className="flex-1 flex items-center justify-center bg-gray-50">
+                    <div className="text-center max-w-md mx-auto p-8">
+                        <div className="text-6xl mb-4">📚</div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">No Course Materials Available</h2>
+
+                        {course?.paymentPending && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                                <p className="text-yellow-800 font-semibold">⏳ Payment Pending</p>
+                                <p className="text-sm text-yellow-700 mt-2">
+                                    Your enrollment is waiting for instructor validation.
+                                    You'll be able to access course materials once the instructor approves your payment.
+                                </p>
+                            </div>
+                        )}
+
+                        {course?.enrollmentRequired && !course?.paymentPending && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                <p className="text-blue-800 font-semibold">🔒 Enrollment Required</p>
+                                <p className="text-sm text-blue-700 mt-2">
+                                    You need to enroll in this course to access the materials.
+                                </p>
+                            </div>
+                        )}
+
+                        {!course?.enrollmentRequired && !course?.paymentPending && (
+                            <p className="text-gray-600 mb-4">
+                                The instructor hasn't added any materials to this course yet.
+                            </p>
+                        )}
+
                         <button onClick={() => navigate('/student/my-courses')} className="btn-primary">
                             Back to My Courses
                         </button>

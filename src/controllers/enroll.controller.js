@@ -102,8 +102,15 @@ export const checkEnrollment = asyncHandler(async (req, res) => {
         student: req.user._id
     });
 
+    // Consider enrolled if payment is validated OR if paymentStatus doesn't exist (legacy enrollments)
+    const isEnrolled = enrollment && (
+        enrollment.paymentStatus === 'validated' ||
+        !enrollment.paymentStatus ||
+        enrollment.paymentStatus === null
+    );
+
     return res.status(200).json(new ApiResponse(200, {
-        isEnrolled: enrollment && enrollment.paymentStatus === 'validated',
+        isEnrolled: isEnrolled,
         enrollmentId: enrollment?._id || null,
         paymentStatus: enrollment?.paymentStatus || null,
         isPending: enrollment?.paymentStatus === 'pending'

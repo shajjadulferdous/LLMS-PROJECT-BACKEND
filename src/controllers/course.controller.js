@@ -140,8 +140,12 @@ export const getCourse = asyncHandler(async (req, res) => {
             student: req.user._id
         });
 
-        // Only consider enrolled if payment is validated
-        isEnrolled = enrollment && enrollment.paymentStatus === 'validated';
+        // Consider enrolled if payment is validated OR if paymentStatus doesn't exist (legacy enrollments)
+        isEnrolled = enrollment && (
+            enrollment.paymentStatus === 'validated' ||
+            !enrollment.paymentStatus ||
+            enrollment.paymentStatus === null
+        );
         enrollmentRequired = !isEnrolled;
 
         // If not enrolled or payment not validated, return course info without materials
@@ -442,3 +446,79 @@ export const uploadFile = asyncHandler(async (req, res) => {
     }, "File uploaded successfully"));
 });
 
+// Get course students with their points (instructor only)
+export const getCourseStudents = asyncHandler(async (req, res) => {
+    const { courseId } = req.params;
+
+    // Verify course exists and user is instructor
+    const course = await Course.findById(courseId);
+    if (!course) throw new ApiError(404, "Course not found");
+
+    const isInstructor = course.instructor.some(
+        instId => instId.toString() === req.user._id.toString()
+    );
+    if (!isInstructor) {
+        throw new ApiError(403, "Only course instructors can view student details");
+    }
+
+    // Get all validated enrollments for this course
+    const { Enroll } = await import("../models/enroll.model.js");
+
+    // First, let's check all enrollments for debugging
+    const allEnrollments = await Enroll.find({ course: courseId });
+    console.log('Total enrollments for course:', allEnrollments.length);
+    console.log('Enrollment statuses:', allEnrollments.map(e => ({
+        student: e.student,
+        paymentStatus: e.paymentStatus
+    })));
+
+    // Get enrollments that are validated OR don't have paymentStatus (legacy enrollments)
+    const enrollments = await Enroll.find({
+        course: courseId,
+        $or: [
+            { paymentStatus: 'validated' },
+            { paymentStatus: { $exists: false } }, // Legacy enrollments without paymentStatus
+            { paymentStatus: null } // Or null paymentStatus
+        ]
+    })
+        .populate('student', 'username fullName email profilePicture')
+        .sort({ createdAt: -1 });
+
+    console.log('Validated/Legacy enrollments:', enrollments.length);
+
+    // Calculate total points for each student
+    const studentsWithPoints = enrollments.map(enrollment => {
+        // Calculate total points from quiz scores
+        const totalPoints = enrollment.quizScores?.reduce((sum, score) => sum + (score.score || 0), 0) || 0;
+
+        // Calculate progress
+        const totalMaterials = course.materials?.length || 0;
+        const completedMaterials = enrollment.completedMaterials?.length || 0;
+        const progress = totalMaterials > 0 ? Math.round((completedMaterials / totalMaterials) * 100) : 0;
+
+        return {
+            enrollmentId: enrollment._id,
+            student: enrollment.student,
+            totalPoints,
+            quizScores: enrollment.quizScores || [],
+            progress,
+            completedMaterials: completedMaterials,
+            totalMaterials: totalMaterials,
+            status: enrollment.status,
+            enrolledAt: enrollment.createdAt
+        };
+    });
+
+    // Sort by total points (highest first)
+    studentsWithPoints.sort((a, b) => b.totalPoints - a.totalPoints);
+
+    return res.status(200).json(new ApiResponse(200, {
+        course: {
+            _id: course._id,
+            title: course.title,
+            description: course.description
+        },
+        students: studentsWithPoints,
+        totalStudents: studentsWithPoints.length
+    }, "Course students retrieved successfully"));
+});

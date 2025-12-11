@@ -71,4 +71,10 @@ export const courseService = {
         const response = await api.delete(`/courses/admin/${id}`);
         return response.data;
     },
+
+    // Instructor - Get course students with points
+    getCourseStudents: async (courseId) => {
+        const response = await api.get(`/courses/${courseId}/students`);
+        return response.data;
+    },
 };

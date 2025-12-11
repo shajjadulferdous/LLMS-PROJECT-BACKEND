@@ -245,12 +245,20 @@ const InstructorDashboard = () => {
                                                     {course.status}
                                                 </span>
                                             </div>
-                                            <Link
-                                                to={`/instructor/courses/edit/${course._id}`}
-                                                className="btn-primary"
-                                            >
-                                                Edit
-                                            </Link>
+                                            <div className="flex gap-2">
+                                                <Link
+                                                    to={`/instructor/courses/${course._id}/students`}
+                                                    className="btn bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
+                                                >
+                                                    Students
+                                                </Link>
+                                                <Link
+                                                    to={`/instructor/courses/${course._id}/edit`}
+                                                    className="btn-primary"
+                                                >
+                                                    Edit
+                                                </Link>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

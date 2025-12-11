@@ -24,6 +24,7 @@ import ManageCourses from './pages/instructor/ManageCourses'
 import EditCourse from './pages/instructor/EditCourse'
 import InstructorPayouts from './pages/instructor/InstructorPayouts'
 import ValidateEnrollments from './pages/instructor/ValidateEnrollments'
+import CourseStudents from './pages/instructor/CourseStudents'
 
 // Admin
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -71,6 +72,7 @@ function App() {
                             <Route path="all-courses" element={<CourseCatalog />} />
                             <Route path="courses/:id" element={<CourseDetails />} />
                             <Route path="courses/:id/edit" element={<EditCourse />} />
+                            <Route path="courses/:courseId/students" element={<CourseStudents />} />
                             <Route path="payouts" element={<InstructorPayouts />} />
                             <Route path="validate-enrollments" element={<ValidateEnrollments />} />
                             <Route path="bank-setup" element={<BankSetup />} />

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { jwtverifyJWT, optionalJWT } from "../middlewares/auth.middlewares.js";
 import { requireAdmin } from "../middlewares/admin.middlewares.js";
 import { upload } from "../middlewares/multer.middlewares.js";
-import { createCourse, listCourses, getCourse, updateCourse, deleteCourse, addMaterial, deleteMaterial, searchInstructors, submitQuizAnswer, uploadFile } from "../controllers/course.controller.js";
+import { createCourse, listCourses, getCourse, updateCourse, deleteCourse, addMaterial, deleteMaterial, searchInstructors, submitQuizAnswer, uploadFile, getCourseStudents } from "../controllers/course.controller.js";
 import { approveCourse, denyCourse, deleteAnyCourse, listPendingCourses } from "../controllers/admin.controller.js";
 
 const router = Router();
@@ -18,6 +18,7 @@ router.delete("/:id", jwtverifyJWT, deleteCourse);
 router.post("/:id/materials", jwtverifyJWT, addMaterial);
 router.delete("/:id/materials/:materialId", jwtverifyJWT, deleteMaterial);
 router.get("/search/instructors", jwtverifyJWT, searchInstructors);
+router.get("/:courseId/students", jwtverifyJWT, getCourseStudents);
 
 // file upload
 router.post("/upload", jwtverifyJWT, upload.single('file'), uploadFile);
