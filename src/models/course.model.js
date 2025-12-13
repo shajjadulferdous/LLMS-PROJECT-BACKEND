@@ -46,7 +46,6 @@ const materialSchema = new mongoose.Schema(
         },
         CoursePicture: {
             type: String,
-            required: false // Made optional
         },
         url: {
             type: String,

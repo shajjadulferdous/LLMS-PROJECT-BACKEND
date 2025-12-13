@@ -28,33 +28,3 @@ export const jwtverifyJWT = asyncHandler(async (req, res, next) => {
         throw new ApiError(401, error?.message || 'Invalid Access Token')
     }
 });
-
-// Optional JWT verification - doesn't throw error if no token
-export const optionalJWT = asyncHandler(async (req, res, next) => {
-    try {
-        const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "");
-        if (!token) {
-            req.user = null;
-            return next();
-        }
-        const decodedtoken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
-
-        const user = await User.findById(decodedtoken?._id).select(
-            "-password -refreshToken"
-        )
-        if (!user) {
-            req.user = null;
-            return next();
-        }
-        if (user.isBlocked) {
-            req.user = null;
-            return next();
-        }
-        req.user = user;
-        next()
-    }
-    catch (error) {
-        req.user = null;
-        next()
-    }
-});
